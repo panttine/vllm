@@ -1472,6 +1472,12 @@ class DeepseekV2ForCausalLM(
         params_dict = dict(self.named_parameters())
         loaded_params: set[str] = set()
         for name, loaded_weight in weights:
+            if "weight_packed" in name:
+                name = name.replace(
+                            "weight_packed",
+                            f"weight",
+                        )
+                
             if "rotary_emb.inv_freq" in name:
                 continue
 
