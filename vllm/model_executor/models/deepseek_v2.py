@@ -1472,12 +1472,6 @@ class DeepseekV2ForCausalLM(
         params_dict = dict(self.named_parameters())
         loaded_params: set[str] = set()
         for name, loaded_weight in weights:
-            if "weight_packed" in name:
-                name = name.replace(
-                            "weight_packed",
-                            f"weight",
-                        )
-                
             if "rotary_emb.inv_freq" in name:
                 continue
 
@@ -1542,7 +1536,7 @@ class DeepseekV2ForCausalLM(
                     # Determine split axis based on op type
                     # gate/up: ColumnParallel → split along dim 0
                     # down: RowParallel → split along dim 1
-                    split_dim = 1 if "down_proj.weight" in name else 0
+                    split_dim = 1 if ("down_proj.weight" in name) else 0
                     total = loaded_weight.shape[split_dim]
                     assert total % num_chunks == 0, (
                         f"Shared expert weight dim {total} "
@@ -1588,8 +1582,51 @@ class DeepseekV2ForCausalLM(
 
                         if is_pp_missing_parameter(name_mapped, self):
                             continue
+                        if name_mapped not in params_dict.keys():
+                            name_mapped = name_mapped.replace(
+                                "weight",
+                                f"weight_packed",
+                            )
+                            if name_mapped not in params_dict.keys():                        
+                                print(name_mapped)
+                                print(name)
+                        # Diagnostic logging: record shapes to help debug
+                        # mismatches between checkpoint chunk and target param.
+                        param = params_dict.get(name_mapped)
+                        try:
+                            if param is None:
+                                logger.warning(
+                                    "Mapped param not found: %s (original: %s)",
+                                    name_mapped,
+                                    name,
+                                )
+                            else:
+                                # compute chunk info if available
+                                if is_fusion_moe_shared_experts_layer:
+                                    try:
+                                        total = loaded_weight.shape[split_dim]
+                                        chunk_info = (
+                                            f"split_dim={split_dim}, total={total}, chunk_size={chunk_size}"
+                                        )
+                                    except Exception:
+                                        chunk_info = "chunk_info=unavailable"
+                                else:
+                                    chunk_info = "not_shared_experts"
 
-                        param = params_dict[name_mapped]
+                                logger.warning(
+                                    "Loading expert chunk: chunk_name=%s, name_mapped=%s, weight_shape=%s, param_shape=%s, %s",
+                                    chunk_name,
+                                    name_mapped,
+                                    tuple(weight_to_load.shape),
+                                    tuple(param.shape) if param is not None else None,
+                                    chunk_info,
+                                )
+                        except Exception:
+                            # Avoid crashing the loader due to logging issues
+                            logger.exception("Failed while logging expert load diagnostics")
+                        if param is None:
+                            # fall back to raising KeyError like before
+                            raise KeyError(f"Parameter {name_mapped} not found in model parameters")
                         # We should ask the weight loader to return success or
                         # not here since otherwise we may skip experts with
                         # other available replicas.
