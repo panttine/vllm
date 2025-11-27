@@ -1551,7 +1551,7 @@ class DeepseekV2ForCausalLM(
                     if is_fusion_moe_shared_experts_layer:
                         if split_dim == 0:
                             weight_to_load = loaded_weight[
-                                j * chunk_size : (j + 1) * chunk_size, :
+                                j * chunk_size : (j + 1) * chunk_size, 0:896
                             ]
                         else:
                             weight_to_load = loaded_weight[
@@ -1610,17 +1610,16 @@ class DeepseekV2ForCausalLM(
                                         )
                                     except Exception:
                                         chunk_info = "chunk_info=unavailable"
+                                    logger.warning(
+                                        "Loading expert chunk: chunk_name=%s, name_mapped=%s, weight_shape=%s, param_shape=%s, %s",
+                                        chunk_name,
+                                        name_mapped,
+                                        tuple(weight_to_load.shape),
+                                        tuple(param.shape) if param is not None else None,
+                                        chunk_info,
+                                    )
                                 else:
                                     chunk_info = "not_shared_experts"
-
-                                logger.warning(
-                                    "Loading expert chunk: chunk_name=%s, name_mapped=%s, weight_shape=%s, param_shape=%s, %s",
-                                    chunk_name,
-                                    name_mapped,
-                                    tuple(weight_to_load.shape),
-                                    tuple(param.shape) if param is not None else None,
-                                    chunk_info,
-                                )
                         except Exception:
                             # Avoid crashing the loader due to logging issues
                             logger.exception("Failed while logging expert load diagnostics")
