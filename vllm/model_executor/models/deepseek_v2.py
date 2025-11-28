@@ -1432,6 +1432,8 @@ class DeepseekV2ForCausalLM(
         )
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
+        tp_rank = get_tensor_model_parallel_rank()
+        tp = get_tensor_model_parallel_world_size()
         rocm_aiter_moe_shared_expert_enabled = (
             rocm_aiter_ops.is_fusion_moe_shared_experts_enabled()
         )
@@ -1551,7 +1553,7 @@ class DeepseekV2ForCausalLM(
                     if is_fusion_moe_shared_experts_layer:
                         if split_dim == 0:
                             weight_to_load = loaded_weight[
-                                j * chunk_size : (j + 1) * chunk_size, 0:896
+                                j * chunk_size : (j + 1) * chunk_size, int(tp_rank*(self.config.hidden_size / tp)):int((tp_rank + 1)*(self.config.hidden_size / tp))
                             ]
                         else:
                             weight_to_load = loaded_weight[
@@ -1672,6 +1674,14 @@ class DeepseekV2ForCausalLM(
                         weight_loader(param, loaded_weight)
             if not is_fusion_moe_shared_experts_layer:
                 loaded_params.add(name)
+
+        logger.warning(
+        "Shared experts=%s, num_eperts=%s, hidden_size=%s, intermediate_size=%s",
+        self.config.n_shared_experts,
+        self.config.n_routed_experts,
+        self.config.hidden_size,
+        self.config.moe_intermediate_size,
+        )
 
         return loaded_params
 
