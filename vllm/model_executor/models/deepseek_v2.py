@@ -93,6 +93,9 @@ from .utils import (
     maybe_prefix,
 )
 
+from vllm.model_executor.layers.quantization.utils.quant_utils import pack_quantized_values_into_int32
+from vllm.scalar_type import scalar_types
+
 if current_platform.is_cuda_alike():
     from vllm import _custom_ops as ops
 elif current_platform.is_xpu():
@@ -1553,7 +1556,7 @@ class DeepseekV2ForCausalLM(
                     if is_fusion_moe_shared_experts_layer:
                         if split_dim == 0:
                             weight_to_load = loaded_weight[
-                                j * chunk_size : (j + 1) * chunk_size, int(tp_rank*(self.config.hidden_size / tp)):int((tp_rank + 1)*(self.config.hidden_size / tp))
+                                j * chunk_size : (j + 1) * chunk_size, :
                             ]
                         else:
                             weight_to_load = loaded_weight[
@@ -1605,6 +1608,7 @@ class DeepseekV2ForCausalLM(
                             else:
                                 # compute chunk info if available
                                 if is_fusion_moe_shared_experts_layer:
+                                    weight_to_load = pack_quantized_values_into_int32(weight_to_load.view(torch.int16), scalar_types.int4, 1)
                                     try:
                                         total = loaded_weight.shape[split_dim]
                                         chunk_info = (
